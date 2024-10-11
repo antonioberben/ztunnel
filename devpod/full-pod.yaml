@@ -1,0 +1,236 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    ambient.istio.io/redirection: disabled
+    kubectl.kubernetes.io/restartedAt: "2024-05-23T18:08:10+02:00"
+    prometheus.io/port: "15020"
+    prometheus.io/scrape: "true"
+    sidecar.istio.io/inject: "false"
+  creationTimestamp: "2024-05-23T16:57:47Z"
+  generateName: ztunnel-
+  labels:
+    app: ztunnel
+    controller-revision-hash: 7b6c994757
+    pod-template-generation: "4"
+    sidecar.istio.io/inject: "false"
+  name: ztunnel-sdbpt
+  namespace: istio-system
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: DaemonSet
+    name: ztunnel
+    uid: 1e158971-9cef-41b2-80cc-5023b819bba0
+  resourceVersion: "484719"
+  uid: 240c2a23-022d-49b2-9335-64afcf64968f
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchFields:
+          - key: metadata.name
+            operator: In
+            values:
+            - kind1-control-plane
+  containers:
+  - args:
+    - proxy
+    - ztunnel
+    env:
+    - name: CA_ADDRESS
+      value: istiod-1-21.istio-system.svc:15012
+    - name: XDS_ADDRESS
+      value: istiod-1-21.istio-system.svc:15012
+    - name: RUST_LOG
+      value: info
+    - name: ISTIO_META_CLUSTER_ID
+      value: cluster1
+    - name: INPOD_ENABLED
+      value: "true"
+    - name: ISTIO_META_DNS_PROXY_ADDR
+      value: 127.0.0.1:15053
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.name
+    - name: POD_NAMESPACE
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.namespace
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: spec.nodeName
+    - name: INSTANCE_IP
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: status.podIP
+    - name: SERVICE_ACCOUNT
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: spec.serviceAccountName
+    image: us-docker.pkg.dev/gloo-mesh/istio-821dd0206d5f/ztunnel:1.21.0-solo
+    imagePullPolicy: IfNotPresent
+    name: istio-proxy
+    ports:
+    - containerPort: 15020
+      name: ztunnel-stats
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /healthz/ready
+        port: 15021
+        scheme: HTTP
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        add:
+        - NET_ADMIN
+        - SYS_ADMIN
+        - NET_RAW
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsGroup: 1337
+      runAsNonRoot: false
+      runAsUser: 0
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/istio
+      name: istiod-ca-cert
+    - mountPath: /var/run/secrets/tokens
+      name: istio-token
+    - mountPath: /var/run/ztunnel
+      name: cni-ztunnel-sock-dir
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-rl4kb
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: kind1-control-plane
+  nodeSelector:
+    kubernetes.io/os: linux
+  preemptionPolicy: PreemptLowerPriority
+  priority: 2000001000
+  priorityClassName: system-node-critical
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: ztunnel
+  serviceAccountName: ztunnel
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoSchedule
+    operator: Exists
+  - key: CriticalAddonsOnly
+    operator: Exists
+  - effect: NoExecute
+    operator: Exists
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+  - effect: NoSchedule
+    key: node.kubernetes.io/disk-pressure
+    operator: Exists
+  - effect: NoSchedule
+    key: node.kubernetes.io/memory-pressure
+    operator: Exists
+  - effect: NoSchedule
+    key: node.kubernetes.io/pid-pressure
+    operator: Exists
+  - effect: NoSchedule
+    key: node.kubernetes.io/unschedulable
+    operator: Exists
+  volumes:
+  - name: istio-token
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          audience: istio-ca
+          expirationSeconds: 43200
+          path: istio-token
+  - configMap:
+      defaultMode: 420
+      name: istio-ca-root-cert
+    name: istiod-ca-cert
+  - hostPath:
+      path: /var/run/ztunnel
+      type: DirectoryOrCreate
+    name: cni-ztunnel-sock-dir
+  - name: kube-api-access-rl4kb
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2024-05-23T16:57:47Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2024-05-23T16:57:48Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2024-05-23T16:57:48Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2024-05-23T16:57:47Z"
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: containerd://0c55edb2c41e833df53321409d24a57d444fcd70cc83fd51fe5d7ac01739ef9e
+    image: us-docker.pkg.dev/gloo-mesh/istio-821dd0206d5f/ztunnel:1.21.0-solo
+    imageID: us-docker.pkg.dev/gloo-mesh/istio-821dd0206d5f/ztunnel@sha256:00313d319ae714492eca54105215c5dcd7343e7378f36563ec9b2cb585ff063d
+    lastState: {}
+    name: istio-proxy
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2024-05-23T16:57:48Z"
+  hostIP: 172.18.0.2
+  phase: Running
+  podIP: 10.12.0.35
+  podIPs:
+  - ip: 10.12.0.35
+  qosClass: Burstable
+  startTime: "2024-05-23T16:57:47Z"
