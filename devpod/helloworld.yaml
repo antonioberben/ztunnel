@@ -31,6 +31,15 @@ spec:
         app: helloworld
         version: v1
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: devpod-ztunnel
+                operator: In
+                values:
+                - enabled
       containers:
       - name: helloworld
         image: docker.io/istio/examples-helloworld-v1

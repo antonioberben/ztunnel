@@ -50,6 +50,15 @@ spec:
     spec:
       terminationGracePeriodSeconds: 0
       serviceAccountName: sleep
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: devpod-ztunnel
+                operator: In
+                values:
+                - enabled
       containers:
       - name: sleep
         image: curlimages/curl

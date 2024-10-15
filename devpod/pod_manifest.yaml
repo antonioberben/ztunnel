@@ -14,6 +14,15 @@ metadata:
     sidecar.istio.io/inject: "false"
     app: devpod-ztunnel # NOTE: This make devpod fails
 spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: devpod-ztunnel
+            operator: In
+            values:
+            - enabled
   containers:
   - name: "devpod"
     env:
