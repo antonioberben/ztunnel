@@ -1,10 +1,10 @@
-## After long time
+# DevPod Demo
 
 ```bash
 curl -L -o devpod "https://github.com/loft-sh/devpod/releases/latest/download/devpod-darwin-arm64" && sudo install -c -m 0755 devpod /usr/local/bin && rm -f devpod
 ```
 
-update the provider
+Update the provider
 
 ```bash
 devpod provider update kubernetes kubernetes
@@ -70,17 +70,28 @@ Output:
 2024-07-23T14:21:03.450051Z	info	access	connection complete	src.addr=10.12.0.8:37522 src.workload=sleep-bc9998558-bhv5z src.namespace=my-ambient src.identity="spiffe://cluster.local/ns/my-ambient/sa/sleep" dst.addr=10.12.0.9:15008 dst.hbone_addr=10.12.0.9:5000 dst.service=helloworld.my-ambient.svc.cluster.local dst.workload=helloworld-v1-77489ccb5f-pjbq5 dst.namespace=my-ambient dst.identity="spiffe://cluster.local/ns/my-ambient/sa/default" direction="outbound" bytes_sent=84 bytes_recv=158 duration="118ms"
 ```
 
-Now traffic works, make sure that the ztunnel is not dpeoyed so we can depoy our devpod-ztunnel:
+At this point, traffic flows through the ztunnel.
 
-```bash
-kubectl patch daemonset -n istio-system ztunnel --type=merge -p='{"spec":{"template":{"spec":{"affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"ztunnel","operator":"In","values":["no"]}]}]}}}}}}}'
+Let's label with `devpod-ztunnel=enabled` only one node to deploy devpod-ztunnel in there:
+
+```shell
+FIRST_NODE=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+kubectl label node $FIRST_NODE devpod-ztunnel=enabled
 ```
 
-You should see that the ztunnel is not deployed anymore. To revert:
+Next command add nodeAffinity to make sure that the upstream ztunnel is not deployed in any node so our test if focused on one node and one devpod-ztunnel:
+
+```bash
+kubectl patch daemonset -n istio-system ztunnel --type=merge -p='{"spec":{"template":{"spec":{"affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"upstream-ztunnel","operator":"In","values":["no"]}]}]}}}}}}}'
+```
+
+You should see that the ztunnel is not deployed anymore. 
+
+**NOTE**: To revert the previous command, run the following:
 
 ```bash
 # RUN THIS ONLY TO REVERT THE PREVIOUS COMMAND
-kubectl patch daemonset -n istio-system ztunnel --type=merge -p='{"spec":{"template":{"spec":{"affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"ztunnel","operator":"NotIn","values":["no"]}]}]}}}}}}}'
+# kubectl patch daemonset -n istio-system ztunnel --type=merge -p='{"spec":{"template":{"spec":{"affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"upstream-ztunnel","operator":"NotIn","values":["no"]}]}]}}}}}}}'
 ```
 
 Make sure you have docker installed:
@@ -91,52 +102,32 @@ docker --version
 
 Go to the root of the project and run the devpod:
 
-Notice that using Kind cluster, the `STORAGE_CLASS` is `standard`. If you are using a different cluster, you may need to change it (i.e in EKS it would be `gp2`)
+**Note** Normally, to start a Devpod is a straight forward simple command. However, given the complexty of ztunnel setup, we need to adjut it a bit.
+
+- `devcontainer.json` is overriden. In our version, we create a `postStartCommand` required to set the secret in the place that ztunnel app can find. Also, some `remoteEnv` are set to help on builing the app in the remote container.
+- Using Kind cluster, the `STORAGE_CLASS` is `standard`. If you are using a different cluster, you may need to change it (i.e in EKS it would be `gp2`)
+- The template of the pod is also overriden to match what ztunnel needs to run.
+
 ```bash
-pushd /Users/antonio/projects/solo/ztunnel
-  devpod up . --provider-option STORAGE_CLASS=gp2 --provider-option KUBECTL_PATH=/usr/local/bin/kubectl --provider-option KUBERNETES_NAMESPACE=istio-system --provider-option POD_MANIFEST_TEMPLATE=/Users/antonio/projects/solo/ztunnel/devpod/pod_manifest.yaml --devcontainer-path devpod/devcontainer.json --ide vscode --debug \
+devpod up . --provider-option STORAGE_CLASS=gp2 --provider-option KUBECTL_PATH=/usr/local/bin/kubectl --provider-option KUBERNETES_NAMESPACE=istio-system --provider-option POD_MANIFEST_TEMPLATE=$(pwd)/devpod/pod_manifest.yaml --devcontainer-path devpod/devcontainer.json --ide vscode --debug \
   --recreate --reset
-popd
 ```
 
-Notice that DevPod copies all files in this folder to the container. Make sure that the `out` folder is deleted before starting devpod. That folder is usully too heavy.
+You will see DevPod cli copying your project files to the remote container. In the case of ztunnel project, make sure that the `out` folder is deleted before starting devpod. That folder is usully too heavy and unnecesary to be copied to the container.
 
-What is happening:
-1. A busybox is created and the final devpod pod is deployed. This pod is based on 2 conttainers:
-    1. Init container: ghcr.io/loft-sh/dockerless:0.1.4
-    1. devpod container: ghcr.io/loft-sh/dockerless:0.1.4
-1. We are pushing the current directory to the stack to create a workspace in the container
+At the moment, changes in the project when working in the container are not reflected in the local files. To do so, you can run the following command:
 
-
-
-
-## More details
-
-"image": "gcr.io/istio-testing/build-tools:master-8fb9ce88f6ad4cdd35c1660cd0ad0ab67eff4c6c",
-"image":"mcr.microsoft.com/devcontainers/base:ubuntu"
-
-kubectl apply -f k8s/service.yaml
-devpod up . --provider-option STORAGE_CLASS=standard --provider-option KUBECTL_PATH=/usr/local/bin/kubectl --provider-option KUBERNETES_NAMESPACE=istio-system --provider-option POD_MANIFEST_TEMPLATE=/Users/antonio/projects/solo/ztunnel/devpod/pod_manifest.yaml --devcontainer-path devpod/devcontainer.json --ide vscode --debug \
---recreate --reset
-
+```bash
 rsync -rlptzv --progress --delete --exclude=.git --exclude=out "ztunnel.devpod:/workspaces/ztunnel" .
-
-devpod delete . --force
-
-kubectl patch daemonset -n istio-system ztunnel --type=merge -p='{"spec":{"template":{"spec":{"affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"ztunnel","operator":"In","values":["no"]}]}]}}}}}}}'
-
-kubectl patch daemonset -n istio-system ztunnel --type=merge -p='{"spec":{"template":{"spec":{"affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"ztunnel","operator":"NotIn","values":["no"]}]}]}}}}}}}'
-
-devpod provider add ../provider.yaml
-
-devpod provider delete gloo-platform 
-
-devpod provider update kubernetes kubernetes
-
-
-Install the devpod CLI
 ```
-curl -L -o devpod "https://github.com/loft-sh/devpod/releases/latest/download/devpod-darwin-amd64" && sudo install -c -m 0755 devpod /usr/local/bin && rm -f devpod
+
+When the process finishes, you can build the project:
+
+```bash
+cargo clean
+
+
+RUST_LOG="debug" CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="sudo -E" cargo build --bin=ztunnel --package=ztunnel --message-format=json
 ```
 
 
@@ -145,30 +136,3 @@ curl -L -o devpod "https://github.com/loft-sh/devpod/releases/latest/download/de
 
 
 
-
-
-# Issues
-
-- Make sure that docker socket is at /var/run/docker.sock or there is a simlink pointing to the right one. For mac and docker desktop, you can change it at Settings -> Advanced -> Allow the default Docker socket to be used and press Apply & restart
-
-- In config or by cli, you need to define the full path to Kubectl
-
-- To attach devcontainer to a running pod: https://code.visualstudio.com/docs/devcontainers/attach-container
-
-- In template, `name` for the pod is ignored
-
-- In template, `app: ztunnel` label makes devpod to fail. If you add `app: ztunnel2`, it does not
-
-- rsync files from remote to local: `rsync -rlptzv --progress --delete --exclude=.git --exclude=out "ztunnel.devpod:/workspaces/ztunnel" .`
-
-- Extension are not installed in the devcontainer. You need to install them manually. No clue why.
-
-- Build ztunnel image. 
-```
-In istio repo with ztunnel checked out at ../ztunnel you can do `BUILD_ZTUNNEL=1 BUILD_WITH_CONTAINER=0 make init && ./tools/docker --targets=ztunnel --hub localhost:5000 --tag sometag --push`
-```
-export GIT_TRACE_PACKET=1
-export GIT_TRACE=1e
-export GIT_CURL_VERBOSE=1
-
-buildah build -f ./devpod/Dockerfile  --build-arg="TARGETARCH=out/rust/debug" -t my-ztunnel .
